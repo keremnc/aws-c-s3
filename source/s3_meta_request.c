@@ -1643,7 +1643,18 @@ void aws_s3_meta_request_send_request_finish_default(
 
         /* If the request failed due to an invalid (ie: unrecoverable) response status, or the meta request already
          * has a result, then make sure that this request isn't retried. */
-        if (error_code == AWS_ERROR_S3_INVALID_RESPONSE_STATUS ||
+        if (error_code == AWS_ERROR_S3_INVALID_RESPONSE_STATUS &&
+            response_status == AWS_HTTP_STATUS_CODE_404_NOT_FOUND) {
+            AWS_LOGF_INFO(
+                AWS_LS_S3_META_REQUEST,
+                "id=%p Cancelling the request because of error %d (%s). (request=%p, response status=%d)",
+                (void *)meta_request,
+                error_code,
+                aws_error_str(error_code),
+                (void *)request,
+                response_status);
+            finish_code = AWS_S3_CONNECTION_FINISH_CODE_SUCCESS;
+        } else if (error_code == AWS_ERROR_S3_INVALID_RESPONSE_STATUS ||
             error_code == AWS_ERROR_S3_INTERNAL_PART_SIZE_MISMATCH_RETRYING_WITH_RANGE ||
             error_code == AWS_ERROR_S3_NON_RECOVERABLE_ASYNC_ERROR ||
             error_code == AWS_ERROR_S3_RESPONSE_CHECKSUM_MISMATCH || meta_request_finishing) {
