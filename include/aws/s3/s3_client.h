@@ -461,6 +461,9 @@ struct aws_s3_client_config {
     /* Throughput target in gigabits per second (Gbps) that we are trying to reach. */
     double throughput_target_gbps;
 
+    /* The maximum time an endpoint can remain idle before it is destroyed */
+    uint64_t max_endpoint_idle_ms;
+
     /* How much memory can we use. This will be capped to SIZE_MAX */
     uint64_t memory_limit_in_bytes;
 
