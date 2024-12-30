@@ -9,6 +9,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/common/assert.h>
+#include <aws/common/clock.h>
 #include <aws/common/device_random.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
@@ -74,6 +75,7 @@ struct aws_s3_endpoint *aws_s3_endpoint_new(
 
     struct aws_s3_endpoint *endpoint = aws_mem_calloc(allocator, 1, sizeof(struct aws_s3_endpoint));
     endpoint->client_synced_data.ref_count = 1;
+    aws_high_res_clock_get_ticks(&endpoint->client_synced_data.last_use_timestamp_ns);
 
     endpoint->allocator = allocator;
     endpoint->host_name = options->host_name;
@@ -275,6 +277,7 @@ static void s_s3_endpoint_release(struct aws_s3_endpoint *endpoint) {
         aws_hash_table_remove(&endpoint->client->synced_data.endpoints, endpoint->host_name, NULL, NULL);
     }
     --endpoint->client_synced_data.ref_count;
+    aws_high_res_clock_get_ticks(&endpoint->client_synced_data.last_use_timestamp_ns);
 
     aws_s3_client_unlock_synced_data(endpoint->client);
     /* END CRITICAL SECTION */

@@ -87,8 +87,11 @@ static const uint32_t s_default_throughput_failure_interval_seconds = 30;
 /* Amount of time spent idling before trimming buffer. */
 static const size_t s_buffer_pool_trim_time_offset_in_s = 5;
 
-/* Interval for scheduling endpoints cleanup task. This is to trim endpoints with a zero reference
- * count. S3 closes the idle connections in ~5 seconds. */
+/* Amount of time an endpoint can remain idle before it is eligible for cleanup */
+static const uint64_t s_default_max_endpoint_idle_ms = 10 * 1000;
+
+/* Interval for scheduling endpoints cleanup task. This is to trim sufficiently idle endpoints with
+ * a zero reference count. S3 closes the idle connections in ~5 seconds. */
 static const uint32_t s_endpoints_cleanup_time_offset_in_s = 5;
 
 /* Called when ref count is 0. */
@@ -571,6 +574,8 @@ struct aws_s3_client *aws_s3_client_new(
         ideal_connection_count_double = aws_min_double(UINT32_MAX, ideal_connection_count_double);
         *(uint32_t *)&client->ideal_connection_count = (uint32_t)ideal_connection_count_double;
     }
+
+    *((uint64_t *)&client->max_endpoint_idle_ms) = s_default_max_endpoint_idle_ms;
 
     client->cached_signing_config = aws_cached_signing_config_new(client, client_config->signing_config);
     if (client_config->enable_s3express) {
@@ -1447,6 +1452,9 @@ static void s_s3_endpoints_cleanup_task(struct aws_task *task, void *arg, enum a
     struct aws_array_list endpoints_to_release;
     aws_array_list_init_dynamic(&endpoints_to_release, client->allocator, 5, sizeof(struct aws_s3_endpoint *));
 
+    uint64_t now = 0;
+    aws_high_res_clock_get_ticks(&now);
+
     /* BEGIN CRITICAL SECTION */
     aws_s3_client_lock_synced_data(client);
     client->synced_data.endpoints_cleanup_task_scheduled = false;
@@ -1455,8 +1463,25 @@ static void s_s3_endpoints_cleanup_task(struct aws_task *task, void *arg, enum a
          aws_hash_iter_next(&iter)) {
         struct aws_s3_endpoint *endpoint = (struct aws_s3_endpoint *)iter.element.value;
         if (endpoint->client_synced_data.ref_count == 0) {
-            aws_array_list_push_back(&endpoints_to_release, &endpoint);
-            aws_hash_iter_delete(&iter, true);
+            uint64_t endpoint_idle_ms = aws_timestamp_convert(
+              now - endpoint->client_synced_data.last_use_timestamp_ns,
+              AWS_TIMESTAMP_NANOS,
+              AWS_TIMESTAMP_MILLIS,
+              NULL);
+
+            AWS_LOGF_TRACE(
+                AWS_LS_S3_CLIENT,
+                "id=%p Endpoint %p [%s] has been idle for %" PRIu64 "ms (max %" PRIu64 "ms)",
+                (void *)client,
+                (void *)endpoint,
+                aws_string_c_str(endpoint->host_name),
+                endpoint_idle_ms,
+                client->max_endpoint_idle_ms);
+
+            if (endpoint_idle_ms > client->max_endpoint_idle_ms) {
+              aws_array_list_push_back(&endpoints_to_release, &endpoint);
+              aws_hash_iter_delete(&iter, true);
+            }
         }
     }
 

@@ -112,6 +112,8 @@ struct aws_s3_endpoint {
          * The endpoint lives in hashtable: `aws_s3_client.synced_data.endpoints`
          * This ref-count can only be touched while holding client's lock */
         size_t ref_count;
+
+        uint64_t last_use_timestamp_ns;
     } client_synced_data;
 
     /* What allocator was used to create this endpoint. */
@@ -252,6 +254,9 @@ struct aws_s3_client {
 
     /* The calculated ideal number of HTTP connections, based on throughput target and throughput per connection. */
     const uint32_t ideal_connection_count;
+
+    /* The maximum time an endpoint can remain idle before it is destroyed */
+    const uint64_t max_endpoint_idle_ms;
 
     /**
      * For multi-part upload, content-md5 will be calculated if the AWS_MR_CONTENT_MD5_ENABLED is specified
