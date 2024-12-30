@@ -88,7 +88,7 @@ static const uint32_t s_default_throughput_failure_interval_seconds = 30;
 static const size_t s_buffer_pool_trim_time_offset_in_s = 5;
 
 /* Amount of time an endpoint can remain idle before it is eligible for cleanup */
-static const uint64_t s_default_max_endpoint_idle_ms = 10 * 1000;
+static const uint64_t s_default_max_endpoint_idle_ms = 0;
 
 /* Interval for scheduling endpoints cleanup task. This is to trim sufficiently idle endpoints with
  * a zero reference count. S3 closes the idle connections in ~5 seconds. */
@@ -575,7 +575,11 @@ struct aws_s3_client *aws_s3_client_new(
         *(uint32_t *)&client->ideal_connection_count = (uint32_t)ideal_connection_count_double;
     }
 
-    *((uint64_t *)&client->max_endpoint_idle_ms) = s_default_max_endpoint_idle_ms;
+    if (client_config->max_endpoint_idle_ms >= 0) {
+        *((uint64_t *)&client->max_endpoint_idle_ms) = client_config->max_endpoint_idle_ms;
+    } else {
+        *((uint64_t *)&client->max_endpoint_idle_ms) = s_default_max_endpoint_idle_ms;
+    }
 
     client->cached_signing_config = aws_cached_signing_config_new(client, client_config->signing_config);
     if (client_config->enable_s3express) {
